@@ -32,6 +32,7 @@ Extract and repack them with a tool that supports yaz0-compressed RARC archives,
 
 
 === Information about BMG 
+
 When dumping a BMG file to text you receive a JSON text file.
 Each entry is a message that has an identification number, a secondary number 
 that is 0 most of the time except for some treasure names, attributes that are full of zeros
