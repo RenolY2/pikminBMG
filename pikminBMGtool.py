@@ -395,7 +395,7 @@ if __name__ == "__main__":
             bom = f.read(4)
         
         if bom.startswith(codecs.BOM_UTF8):
-            encoding = "utf-8-bom"
+            encoding = "utf-8-sig"
         elif bom.startswith(codecs.BOM_UTF32_LE) or bom.startswith(codecs.BOM_UTF32_BE):
             encoding = "utf-32"
         elif bom.startswith(codecs.BOM_UTF16_LE) or bom.startswith(codecs.BOM_UTF16_BE):
