@@ -1,5 +1,5 @@
 # Intro
-pikminBMGtool.py v0.5 by Yoshi2
+pikminBMGtool.py v0.6.1 by Yoshi2
 A tool for converting Pikmin 2 BMG files to text (JSON) and from text (JSON) to BMG.
 
 ## Installation advice
