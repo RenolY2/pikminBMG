@@ -290,7 +290,18 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
                         
                     textsection.write(escapesequence)
                 else:
-                    encodedletter = letter.encode(encoding)
+                    try:
+                        encodedletter = letter.encode(encoding)
+                    except:
+                        encodedletter = letter.encode(encoding, 'replace')
+                        print("Warning for Message ID {0}: Unsupported character '{1}' replaced with '{2}'".format(msg["ID"], letter, encodedletter.decode()))
+                        text = textsection.getvalue()
+                        lastindex = len(text)
+                        start = lastindex - 20
+                        if start < 0: start = 0
+                        
+                        print("Context:", text[start:-1])
+                    
                     textsection.write(encodedletter)
                     
             textsection.write(b"\x00")
