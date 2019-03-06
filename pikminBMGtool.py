@@ -104,7 +104,7 @@ def dump_bmg_to_jsontxt(inputBMG, output):
         messagecount = read_uint16(f)
         itemlength = read_uint16(f)
         
-        assert itemlength == 8
+        #assert itemlength == 8
         f.read(4) #padding 
         inf_items = []
         for i in range(messagecount):
@@ -165,10 +165,11 @@ def dump_bmg_to_jsontxt(inputBMG, output):
             
             i += 1
         
-        messages_json = []
-        for msg in messages:
+        messages_json = [{"Attribute Length": itemlength}]
+        for i, msg in enumerate(messages):
             messages_json.append({
                 "ID": ", ".join(str(x) for x in msg.msgid), 
+                "index": hex(i),
                 "attributes": msg.attributes.decode("ascii"), 
                 "text": msg.as_string_newline(encoding=encoding)
             })
@@ -234,7 +235,13 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
 
     # INF1 header
     write_uint16(inf_section.data, len(messages))   # message count 
-    write_uint16(inf_section.data, 0x08)            # length of each item
+    attrlen = messages.pop(0)
+    if "Attribute Length" in attrlen:
+        
+        write_uint16(inf_section.data, int(attrlen["Attribute Length"]))            # length of each item
+    else:
+        messages.insert(0, attrlen)
+        write_uint16(inf_section.data, 8)
     write_uint32(inf_section.data, 0x00000000)      # padding
 
     # DAT1 has no real header
@@ -281,9 +288,15 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
                         textsection.write(b"\\")
                 elif letter == "{":
                     escapesequence = b""
+                    tmpstart=string.tell()
                     letter = string.read(1)
                     
                     while letter != "}":
+                        if letter == "":
+                            curr = string.tell()
+                            string.seek(tmpstart)
+                            data = string.read(curr-tmpstart)
+                            raise RuntimeError("Hit end of string while reading command sequence: {0} in message ID {1}".format(data, msg["ID"])) 
                         hexval = letter+string.read(1)
                         escapesequence += unhexlify(hexval)
                         letter = string.read(1)
