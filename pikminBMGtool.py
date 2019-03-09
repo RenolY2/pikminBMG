@@ -234,13 +234,14 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
     mid_section = Section(b"MID1")
 
     # INF1 header
-    write_uint16(inf_section.data, len(messages))   # message count 
+    
     attrlen = messages.pop(0)
     if "Attribute Length" in attrlen:
-        
+        write_uint16(inf_section.data, len(messages))   # message count 
         write_uint16(inf_section.data, int(attrlen["Attribute Length"]))            # length of each item
     else:
         messages.insert(0, attrlen)
+        write_uint16(inf_section.data, len(messages))   # message count 
         write_uint16(inf_section.data, 8)
     write_uint32(inf_section.data, 0x00000000)      # padding
 
