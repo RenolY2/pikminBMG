@@ -70,7 +70,7 @@ def dump_bmg_to_jsontxt(inputBMG, output):
         sectioncount = read_uint32(f)
         encodingval = read_uint32(f)
         if encodingval == 0x03000000:
-            print("Got encoding value {0:x}, assuming Shift-JIS encoding")
+            print("Got encoding value {0:x}, assuming Shift-JIS encoding".format(encodingval))
             encoding = "shift-jis"
         else:
             print("Got encoding value {0:x}, assuming latin-1 encoding".format(encodingval))
@@ -166,8 +166,12 @@ def dump_bmg_to_jsontxt(inputBMG, output):
             messages.append(msgobj)
             
             i += 1
+        f.seek(mid_start+0xA)
+        unknown_mid_value = read_uint16(f)
         
-        messages_json = [{"Attribute Length": itemlength}]
+        messages_json = [{"Attribute Length": itemlength, 
+                        "Unknown MID1 Value": "{:x}".format(unknown_mid_value)}]
+                        
         for i, msg in enumerate(messages):
             messages_json.append({
                 "ID": ", ".join(str(x) for x in msg.msgid), 
@@ -241,6 +245,10 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
     if "Attribute Length" in attrlen:
         write_uint16(inf_section.data, len(messages))   # message count 
         write_uint16(inf_section.data, int(attrlen["Attribute Length"]))            # length of each item
+        if "Unknown MID1 Value" in attrlen:
+            unk_mid1_val = int(attrlen["Unknown MID1 Value"], 16)
+        else:
+            unk_mid1_val = 0x1001
     else:
         messages.insert(0, attrlen)
         write_uint16(inf_section.data, len(messages))   # message count 
@@ -252,7 +260,7 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
 
     # MID1 header 
     write_uint16(mid_section.data, len(messages))   # message count 
-    write_uint16(mid_section.data, 0x1001)          # unknown but always this value 
+    write_uint16(mid_section.data, unk_mid1_val)          # unknown but always this value 
     write_uint32(mid_section.data, 0x00000000)      # padding 
 
     written = 1
