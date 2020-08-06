@@ -124,6 +124,11 @@ def dump_bmg_to_jsontxt(inputBMG, output):
         mid_start, mid_magic, mid_size, mid_data = sections[2]
         assert mid_magic == b"MID1"
         
+        additional_sections = []
+        if len(sections) > 3:
+            for i in range(3, len(sections)):
+                additional_sections.append(sections[i])
+        
         i = 0
         
         for offset, attribs in inf_items:
@@ -179,7 +184,11 @@ def dump_bmg_to_jsontxt(inputBMG, output):
                 "attributes": msg.attributes.decode("ascii"), 
                 "text": msg.as_string_newline(encoding=encoding)
             })
-    
+        
+        for _, magic, _, data in additional_sections:
+            
+            messages_json.append({"Section": str(magic, encoding="ascii"),
+                                    "Data": str(hexlify(data), encoding="ascii")})
     
     #with io.open(output, "w", encoding="utf-8") as f:
     with output as f:
@@ -254,6 +263,18 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
         write_uint16(inf_section.data, len(messages))   # message count 
         write_uint16(inf_section.data, 8)
     write_uint32(inf_section.data, 0x00000000)      # padding
+
+    additional_sections = []
+    tmp = []
+    for message in messages:
+        if "Section" not in message:
+            tmp.append(message)
+        else:
+            section = Section(bytes(message["Section"], encoding="ascii"))
+            section.data.write(unhexlify(message["Data"]))
+            additional_sections.append(section)
+    
+    messages = tmp 
 
     # DAT1 has no real header
     dat_section.data.write(b"\x00") # write the empty string  
@@ -345,7 +366,7 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
     with outputBMG as f:
         f.write(b"MESGbmg1")
         write_uint32(f, 0xFF00FF00) # placeholder for later 
-        write_uint32(f, 0x3) # section count
+        write_uint32(f, 0x3+len(additional_sections)) # section count
         
         if encoding == "shift-jis":
             write_uint32(f, 0x03000000) # Used for US and Jpn, so possibly encoding?
@@ -360,6 +381,9 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
         dat_section.write_section(f)
         mid_section.write_section(f)
         end = f.tell()
+        
+        for section in additional_sections:
+            section.write_section(f)
         
         f.seek(0x08)
         write_uint32(f, end) # write file length 
