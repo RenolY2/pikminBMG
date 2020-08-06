@@ -240,15 +240,15 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
     mid_section = Section(b"MID1")
 
     # INF1 header
-    
+    unk_mid1_val = 0x1001
     attrlen = messages.pop(0)
     if "Attribute Length" in attrlen:
         write_uint16(inf_section.data, len(messages))   # message count 
         write_uint16(inf_section.data, int(attrlen["Attribute Length"]))            # length of each item
         if "Unknown MID1 Value" in attrlen:
             unk_mid1_val = int(attrlen["Unknown MID1 Value"], 16)
-        else:
-            unk_mid1_val = 0x1001
+
+            
     else:
         messages.insert(0, attrlen)
         write_uint16(inf_section.data, len(messages))   # message count 
