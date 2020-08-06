@@ -260,7 +260,7 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
     for inm, msg in enumerate(messages):
         attributes = unhexlify(msg["attributes"])
         if len(msg["text"]) == 1 and len(msg["text"][0]) == 0:
-            offset = 0
+            offset = written
         else: 
             offset = written 
         
