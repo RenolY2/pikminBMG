@@ -70,8 +70,10 @@ def dump_bmg_to_jsontxt(inputBMG, output):
         sectioncount = read_uint32(f)
         encodingval = read_uint32(f)
         if encodingval == 0x03000000:
+            print("Got encoding value {0:x}, assuming Shift-JIS encoding")
             encoding = "shift-jis"
         else:
+            print("Got encoding value {0:x}, assuming latin-1 encoding".format(encodingval))
             encoding = "latin-1"#"iso8859-15" #latin-9
         
         padding = f.read(0x0C)
