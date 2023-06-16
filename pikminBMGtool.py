@@ -112,7 +112,7 @@ def dump_bmg_to_jsontxt(inputBMG, output):
         for i in range(messagecount):
             dat1_offset = read_uint32(f)
             attributes = f.read(itemlength-4)
-            
+            print(hex(i), attributes)
             inf_items.append((dat1_offset, attributes))
         print(messagecount, "entries in inf1 read")
         print(hex(f.tell()), hex(inf_start+size))
@@ -219,19 +219,22 @@ class Section(object):
         #self.size = 0
         self.data = io.BytesIO()
     
-    def write_section(self, f):
+    def write_section(self, f, pad=True):
         data = self.data.getvalue()
         
         f.write(self.magic)
         sizepos = f.tell()
         write_uint32(f, 0xFF00FF00) # placeholder 
         f.write(data)
-        pos = f.tell()
-        if pos % 32 != 0:
-            padding = 32 - (pos % 32) 
+        if pad:
+            pos = f.tell()
+            if pos % 32 != 0:
+                padding = 32 - (pos % 32) 
+            else:
+                padding = 0
+            f.write(b"\x00"*padding)
         else:
             padding = 0
-        f.write(b"\x00"*padding)
         
         now = f.tell()
         f.seek(sizepos)
@@ -252,17 +255,15 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
     unk_mid1_val = 0x1001
     attrlen = messages.pop(0)
     if "Attribute Length" in attrlen:
-        write_uint16(inf_section.data, len(messages))   # message count 
-        write_uint16(inf_section.data, int(attrlen["Attribute Length"]))            # length of each item
+        attrlength = int(attrlen["Attribute Length"])
         if "Unknown MID1 Value" in attrlen:
             unk_mid1_val = int(attrlen["Unknown MID1 Value"], 16)
 
-            
     else:
         messages.insert(0, attrlen)
-        write_uint16(inf_section.data, len(messages))   # message count 
-        write_uint16(inf_section.data, 8)
-    write_uint32(inf_section.data, 0x00000000)      # padding
+        attrlength = 8
+        
+    
 
     additional_sections = []
     tmp = []
@@ -275,7 +276,9 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
             additional_sections.append(section)
     
     messages = tmp 
-
+    write_uint16(inf_section.data, len(messages))   # message count 
+    write_uint16(inf_section.data, attrlength)
+    write_uint32(inf_section.data, 0x00000000)      # padding
     # DAT1 has no real header
     dat_section.data.write(b"\x00") # write the empty string  
 
