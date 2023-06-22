@@ -19,19 +19,24 @@ def pretty_hex(string):
     return " ".join("{:02X}".format(char) for char in string)
 def pretty_hex_no_space(string):
     return "".join("{:02X}".format(char) for char in string)
-def read_uint32(f):
-    return struct.unpack(">I", f.read(4))[0]
-def read_uint16(f):
-    return struct.unpack(">H", f.read(2))[0]
+def read_uint32(f, bigendian=True):
+    return struct.unpack(">I" if bigendian else "I", f.read(4))[0]
+def read_uint16(f, bigendian=True):
+    return struct.unpack(">H" if bigendian else "H", f.read(2))[0]
 def read_uint8(f):
     return struct.unpack("B", f.read(1))[0]
-def read_uint24(f):
+def read_uint24(f, bigendian):
     upperval = read_uint8(f)
-    lowerval = read_uint16(f)
-    
-    return (upperval << 16) | lowerval 
+    lowerval = read_uint16(f, bigendian)
+    return (upperval << 16) | lowerval  
 
-    
+def read_magic(f, bigendian=True):
+    if bigendian:
+        return f.read(4)
+    else:
+        return bytes(reversed(f.read(4)))
+        
+
 class Message(object):
     def __init__(self):
         self.attributes = ""
@@ -61,13 +66,18 @@ def dump_bmg_to_jsontxt(inputBMG, output):
     #with open(inputBMG, "rb") as f:
     with inputBMG as f:
         magic = f.read(0x08)
-        if magic != b"MESGbmg1":
+        if magic != b"MESGbmg1" and magic != b"MESG1gmb":
             raise RuntimeError(
                 "Input file not a BMG file. Encountered magic {0}".format(magic)
                 )
-                                
-        filesize = read_uint32(f)
-        sectioncount = read_uint32(f)
+                
+        bigendian = True 
+        if magic == b"MESG1gmb":
+            print("BMG detected as Little Endian (Switch)")
+            bigendian = False 
+            
+        filesize = read_uint32(f, bigendian)
+        sectioncount = read_uint32(f, bigendian)
         encodingval = read_uint32(f)
         if encodingval == 0x03000000:
             print("Got encoding value {0:x}, assuming Shift-JIS encoding".format(encodingval))
@@ -86,8 +96,8 @@ def dump_bmg_to_jsontxt(inputBMG, output):
         
         for i in range(sectioncount):  
             sectionstart = f.tell()
-            magic = f.read(4)
-            sectionsize = read_uint32(f)
+            magic = read_magic(f, bigendian)
+            sectionsize = read_uint32(f, bigendian)
             print("found section", magic, "with size", hex(sectionsize))
             data = f.read(sectionsize - 8)
             
@@ -103,16 +113,16 @@ def dump_bmg_to_jsontxt(inputBMG, output):
         assert magic == b"INF1"
         
         f.seek(inf_start+8) # skipping magic and filesize
-        messagecount = read_uint16(f)
-        itemlength = read_uint16(f)
+        messagecount = read_uint16(f, bigendian)
+        itemlength = read_uint16(f, bigendian)
         
         #assert itemlength == 8
         f.read(4) #padding 
         inf_items = []
         for i in range(messagecount):
-            dat1_offset = read_uint32(f)
+            dat1_offset = read_uint32(f, bigendian)
             attributes = f.read(itemlength-4)
-            print(hex(i), attributes)
+            #print(hex(i), attributes)
             inf_items.append((dat1_offset, attributes))
         print(messagecount, "entries in inf1 read")
         print(hex(f.tell()), hex(inf_start+size))
@@ -165,14 +175,14 @@ def dump_bmg_to_jsontxt(inputBMG, output):
             msgobj.message = text 
             
             f.seek(mid_start+0x10+i*4)
-            msgid = (read_uint24(f), read_uint8(f)) # the uint24 is the message id, the uint8 is some sort of sub id?
+            msgid = (read_uint24(f, bigendian), read_uint8(f)) # the uint24 is the message id, the uint8 is some sort of sub id?
             msgobj.msgid = msgid 
             
             messages.append(msgobj)
             
             i += 1
         f.seek(mid_start+0xA)
-        unknown_mid_value = read_uint16(f)
+        unknown_mid_value = read_uint16(f, bigendian)
         
         messages_json = [{"Attribute Length": itemlength, 
                         "Unknown MID1 Value": "{:x}".format(unknown_mid_value)}]
@@ -198,33 +208,47 @@ def dump_bmg_to_jsontxt(inputBMG, output):
 # Code for packing BMG
 # -------------------- 
 
-def write_uint32(f, val):
-    f.write(struct.pack(">I", val)) 
+def write_uint32(f, val, bigendian=True):
+    f.write(struct.pack(">I" if bigendian else "I", val)) 
     
-def write_uint24(f, val):
-    upper = val >> 8
-    lower = val & 0xFF 
+def write_uint24(f, val, bigendian=True):
+    if bigendian:
+        upper = val >> 8
+        lower = val & 0xFF
+        f.write(struct.pack(">HB", upper, lower))
+    else:
+        upper = val >> 16
+        lower = val & 0xFFFF
+        write_uint8(f, upper)
+        write_uint16(f, lower, bigendian)
+        #f.write(struct.pack("HB", upper, lower))
     
-    f.write(struct.pack(">HB", upper, lower))
-    
-def write_uint16(f, val):
-    f.write(struct.pack(">H", val))
+def write_uint16(f, val, bigendian=True):
+    f.write(struct.pack(">H" if bigendian else "H", val))
     
 def write_uint8(f, val):
-    f.write(struct.pack(">B", val))
+    f.write(struct.pack("B", val))
+    
+def write_magic(f, magic, bigendian=True):
+    if bigendian:
+        f.write(magic)
+    else:
+        f.write(bytes(reversed(magic)))
+        
 
 class Section(object):
-    def __init__(self, magic):
+    def __init__(self, magic, bigendian=True):
         self.magic = magic 
         #self.size = 0
         self.data = io.BytesIO()
+        self._bigendian=bigendian
     
     def write_section(self, f, pad=True):
         data = self.data.getvalue()
         
-        f.write(self.magic)
+        write_magic(f, self.magic, self._bigendian)
         sizepos = f.tell()
-        write_uint32(f, 0xFF00FF00) # placeholder 
+        write_uint32(f, 0xFF00FF00, self._bigendian) # placeholder 
         f.write(data)
         if pad:
             pos = f.tell()
@@ -238,18 +262,18 @@ class Section(object):
         
         now = f.tell()
         f.seek(sizepos)
-        write_uint32(f, 8 + len(data) + padding)
+        write_uint32(f, 8 + len(data) + padding, self._bigendian)
         f.seek(now)
         
-def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
+def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis", bigendian=True):
     #with io.open(inputJSONfile, "r", encoding="utf-8") as f:
     #    messages = json.load(f)
-    
+    print("Big endian?", bigendian)
     messages = json.load(inputJSONfile)
     
-    inf_section = Section(b"INF1")
-    dat_section = Section(b"DAT1")
-    mid_section = Section(b"MID1")
+    inf_section = Section(b"INF1", bigendian)
+    dat_section = Section(b"DAT1", bigendian)
+    mid_section = Section(b"MID1", bigendian)
 
     # INF1 header
     unk_mid1_val = 0x1001
@@ -276,16 +300,16 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
             additional_sections.append(section)
     
     messages = tmp 
-    write_uint16(inf_section.data, len(messages))   # message count 
-    write_uint16(inf_section.data, attrlength)
-    write_uint32(inf_section.data, 0x00000000)      # padding
+    write_uint16(inf_section.data, len(messages), bigendian)   # message count 
+    write_uint16(inf_section.data, attrlength, bigendian)
+    write_uint32(inf_section.data, 0x00000000, bigendian)      # padding
     # DAT1 has no real header
     dat_section.data.write(b"\x00") # write the empty string  
 
     # MID1 header 
-    write_uint16(mid_section.data, len(messages))   # message count 
-    write_uint16(mid_section.data, unk_mid1_val)          # unknown but always this value 
-    write_uint32(mid_section.data, 0x00000000)      # padding 
+    write_uint16(mid_section.data, len(messages), bigendian)   # message count 
+    write_uint16(mid_section.data, unk_mid1_val, bigendian)          # unknown but always this value 
+    write_uint32(mid_section.data, 0x00000000, bigendian)      # padding 
 
     written = 1
     encoding = encoding #"shift-jis" #"iso8859-15"
@@ -297,7 +321,7 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
             offset = written 
         
         # Write INF1 data (offset+attributes table)
-        write_uint32(inf_section.data, offset)
+        write_uint32(inf_section.data, offset, bigendian)
         inf_section.data.write(attributes)
         
         if offset > 0:
@@ -362,14 +386,17 @@ def pack_json_to_bmg(inputJSONfile, outputBMG, encoding="shift-jis"):
         id = int(id.strip())
         num = int(num.strip()) # unknown, most of the time 0 but sometimes 1, e.g. with duplicate strings 
         
-        write_uint24(mid_section.data, id)
+        write_uint24(mid_section.data, id, bigendian)
         write_uint8(mid_section.data, num)
         
     #with open(outputBMG, "wb") as f:
     with outputBMG as f:
-        f.write(b"MESGbmg1")
-        write_uint32(f, 0xFF00FF00) # placeholder for later 
-        write_uint32(f, 0x3+len(additional_sections)) # section count
+        if bigendian:
+            f.write(b"MESGbmg1")
+        else:
+            f.write(b"MESG1gmb")
+        write_uint32(f, 0xFF00FF00, bigendian) # placeholder for later 
+        write_uint32(f, 0x3+len(additional_sections), bigendian) # section count
         
         if encoding == "shift-jis":
             write_uint32(f, 0x03000000) # Used for US and Jpn, so possibly encoding?
@@ -425,6 +452,12 @@ if __name__ == "__main__":
                             )
                         )
     
+    parser.add_argument("--switch", default=False, action="store_true",
+                        help=(
+                            "If set, will output a BMG for the Switch version of Pikmin 2 (Values stored as Little Endian)"
+                            )
+                        )
+    
     args = parser.parse_args()
     
     input = args.input 
@@ -469,5 +502,5 @@ if __name__ == "__main__":
         
         with io.open(input, "r", encoding=encoding) as txtfile:
             with open(output, "wb") as bmgfile:
-                pack_json_to_bmg(txtfile, bmgfile, encoding=args.encoding)
+                pack_json_to_bmg(txtfile, bmgfile, encoding=args.encoding, bigendian=not args.switch)
         print("bmg file created")
